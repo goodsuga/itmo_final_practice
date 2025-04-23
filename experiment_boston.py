@@ -3,6 +3,8 @@ from my_generator import MyGenerator
 import torch
 from sklearn.preprocessing import OrdinalEncoder
 import numpy as np
+from catboost import CatBoostRegressor
+from sklearn.metrics import mean_absolute_error as mae, mean_absolute_percentage_error as mape, r2_score
 
 RNG = np.random.default_rng(42)
 
@@ -48,7 +50,35 @@ with torch.no_grad():
     o, _, _ = model(generate_noise_table(400))
     o = model.decode_output(o.to("cuda:0"))
 
+o.loc[:, cat_features] = o[cat_features].astype(str)
+data.loc[:, cat_features] = data[cat_features].astype(str)
+
 print("DATA:")
 print(data)
 print("O:")
 print(o)
+
+reg = CatBoostRegressor(cat_features=cat_features, verbose=0)
+reg.fit(data.iloc[:400].drop(columns=["medv"]), data.iloc[:400]["medv"])
+preds_raw = reg.predict(data.iloc[400:].drop(columns=["medv"]))
+
+reg = CatBoostRegressor(cat_features=cat_features, verbose=0)
+reg.fit(o.drop(columns=["medv"]), o["medv"])
+preds_generated = reg.predict(data.iloc[400:].drop(columns=["medv"]))
+
+reg = CatBoostRegressor(cat_features=cat_features, verbose=0)
+reg.fit(
+    pd.concat([o, data.iloc[:400]]).drop(columns=["medv"]),
+    pd.concat([o, data.iloc[:400]])["medv"]
+)
+preds_combo = reg.predict(data.iloc[400:].drop(columns=["medv"]))
+
+res = pd.DataFrame([
+    {"name": "raw", "mae": mae(data.iloc[400:]["medv"], preds_raw), "mape": mape(data.iloc[400:]["medv"], preds_raw), "r2": r2_score(data.iloc[400:]["medv"], preds_raw)},
+    {"name": "gen", "mae": mae(data.iloc[400:]["medv"], preds_generated), "mape": mape(data.iloc[400:]["medv"], preds_generated), "r2": r2_score(data.iloc[400:]["medv"], preds_generated)},
+    {"name": "combo", "mae": mae(data.iloc[400:]["medv"], preds_combo), "mape": mape(data.iloc[400:]["medv"], preds_combo), "r2": r2_score(data.iloc[400:]["medv"], preds_combo)}
+])
+print(res)
+
+    
+
