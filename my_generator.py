@@ -2,6 +2,7 @@ import pandas as pd
 import torch
 from typing import List
 from tqdm import tqdm
+import numpy as np
 
 
 class MyGenerator(torch.nn.Module):
@@ -24,19 +25,21 @@ class MyGenerator(torch.nn.Module):
                 self.embedding_layers[feature] = torch.nn.Embedding(self.stats[feature]["nunique"], desired_embedding_size)
             else:
                 self.stats[feature] = {"min": col.min(), "max": col.max()}
-                self.embedding_scheme[feature] = (self.embedded_size, self.embedded_size + 2)
-                self.embedded_size += 2
-                self.embedding_layers[feature] = torch.nn.Sequential(torch.nn.Linear(1, 2), torch.nn.PReLU())
+                self.embedding_scheme[feature] = (self.embedded_size, self.embedded_size + 1)
+                self.embedded_size += 1
+                self.embedding_layers[feature] = lambda x: x #torch.nn.Sequential(torch.nn.Linear(1, 2), torch.nn.PReLU())
             
         self.embedding_layers = torch.nn.ParameterDict(self.embedding_layers)
         
         self.encoder = torch.nn.Sequential(
-            torch.nn.Linear(self.embedded_size, 256),
+            torch.nn.Linear(self.embedded_size, 512),
             torch.nn.PReLU(),
-            torch.nn.Linear(256, 256),
+            torch.nn.Linear(512, 512),
             torch.nn.PReLU(),
-            torch.nn.Linear(256, self.embedded_size + 1)
+            torch.nn.Linear(512, self.embedded_size + 1)
         )
+        
+        self.pdist = torch.nn.PairwiseDistance()
         
     def forward(self, table: pd.DataFrame):
         encoded_input = torch.zeros((table.shape[0], self.embedded_size))
@@ -53,7 +56,23 @@ class MyGenerator(torch.nn.Module):
         out = full_out[:, :-1].cpu()
         cls = full_out[:, -1].cpu()
         return out, cls, encoded_input
-        
+    
+    @torch.no_grad()
+    def decode_output(self, out):
+        cols = {}
+        for col in self.embedding_scheme:
+            scheme = self.embedding_scheme[col]
+            col_out = out[:, scheme[0]:scheme[1]]
+            if col in self.cat_features:
+                embeddings = self.embedding_layers[col].weight.data
+                dist = np.array([
+                    int(torch.argmax(((embeddings - col_out[i])**2).mean(dim=-1)).item())
+                    for i in range(col_out.shape[0])
+                ])
+                cols[col] = dist
+            else:
+                cols[col] = (col_out * (self.stats[col]["max"] - self.stats[col]["min"]) + self.stats[col]["min"]).cpu().numpy().flatten()
+        return pd.DataFrame(cols)
 
 if __name__ == "__main__":
     table = pd.DataFrame({
@@ -63,7 +82,7 @@ if __name__ == "__main__":
     })
     generator = MyGenerator(table, cat_features=["B"], desired_embedding_size=3).to("cuda:0")
     opt = torch.optim.Adam(generator.parameters(), lr=1e-4)
-    for epoch in tqdm(list(range(10000))):
+    for epoch in tqdm(list(range(100))):
         opt.zero_grad()
         o, c, e = generator(table)
         loss1 = ((o - e)**2).mean()
@@ -72,6 +91,9 @@ if __name__ == "__main__":
         loss.backward()
         opt.step()
         print(f"{loss1.item()=}; {loss2.item()=}; {loss.item()=}")
+    
+    o, _, _ = generator(table)
+    print(generator.decode_output(o.to("cuda:0")))
 
         
         

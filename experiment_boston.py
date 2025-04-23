@@ -24,7 +24,7 @@ def generate_noise_table(samples):
             cols[col] = RNG.uniform(model.stats[col]["min"], model.stats[col]["max"], samples)
     return pd.DataFrame(cols)
     
-for epoch in range(10000):
+for epoch in range(500):
     opt.zero_grad()
     o, c, e = model(data.iloc[:400])
     loss1 = ((o - e)**2).mean()
@@ -41,4 +41,14 @@ for epoch in range(10000):
     loss = loss + loss2
     loss.backward()
     opt.step()
-    print(f"{loss.item()=:.4f}")
+    print(f"{epoch=}: {torch.sqrt(loss).item()=:.4f}")
+
+model.eval()
+with torch.no_grad():
+    o, _, _ = model(generate_noise_table(400))
+    o = model.decode_output(o.to("cuda:0"))
+
+print("DATA:")
+print(data)
+print("O:")
+print(o)
