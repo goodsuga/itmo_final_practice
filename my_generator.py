@@ -32,9 +32,9 @@ class MyGenerator(torch.nn.Module):
         self.embedding_layers = torch.nn.ParameterDict(self.embedding_layers)
         
         self.encoder = torch.nn.Sequential(
-            torch.nn.Linear(self.embedded_size, self.embedded_size // 2),
+            torch.nn.Linear(self.embedded_size, 128),
             torch.nn.ReLU(),
-            torch.nn.Linear(self.embedded_size // 2, self.embedded_size + 1)
+            torch.nn.Linear(128, self.embedded_size + 1)
         )
         
         self.pdist = torch.nn.PairwiseDistance()
