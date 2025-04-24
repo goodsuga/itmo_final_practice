@@ -1,6 +1,7 @@
 import pandas as pd
 from my_generator import MyGenerator
 from gan_generator import GanGenerator
+from vae_generator import VaeGenerator
 import torch
 from sklearn.preprocessing import OrdinalEncoder
 import numpy as np
@@ -28,7 +29,7 @@ def generate_noise_table(samples):
             cols[col] = RNG.uniform(model.stats[col]["min"], model.stats[col]["max"], samples)
     return pd.DataFrame(cols)
 
-E = tqdm(range(20000), total=20000)
+E = tqdm(range(20), total=20)
 for epoch in E:
     opt.zero_grad()
     o, c, e = model(data.iloc[:100])
@@ -133,7 +134,84 @@ opt_critic = torch.optim.Adam(gan_model.critic.parameters(), lr=1e-3)
 
 data[cat_features] = data[cat_features].astype(float).astype(int)
 
-E = tqdm(range(20000), total=20000)
+E = tqdm(range(20), total=20)
+loss_critic = None
+loss_creator = None
+for epoch in E:
+    if epoch % 2 == 0:
+        opt_creator.zero_grad()
+        creation = gan_model(data)
+        is_real = gan_model.critic(creation)
+        loss_creator = ((is_real - 1)**2).mean()
+        loss_creator.backward()
+        opt_creator.step()
+    else:
+        opt_critic.zero_grad()
+        creation = gan_model(data)
+        is_real = gan_model.critic(creation)
+        encoded = gan_model.encode(data.iloc[:100])
+        is_real2 = gan_model.critic(encoded.to("cuda:0"))
+        loss_critic = ((is_real2 - 1)**2).mean() + ((is_real - 0)**2).mean()
+        loss_critic.backward()
+        opt_critic.step()
+    if loss_critic is not None and loss_creator is not None:
+        E.set_postfix({"critic": round(loss_critic.item(), 4), "creator": round(loss_creator.item(), 4)})
+
+model.eval()
+with torch.no_grad():
+    o = gan_model.forward(generate_noise_table(30000))
+    c = gan_model.critic(o)
+    o1 = gan_model.decode_output(o[torch.argsort(c.squeeze(), descending=True)[:300]].to("cuda:0"))
+    o = gan_model.decode_output(o)
+
+data[cat_features] = data[cat_features].astype(str)
+o[cat_features] = o[cat_features].astype(str)
+o1[cat_features] = o[cat_features].astype(str)
+
+reg = CatBoostRegressor(cat_features=cat_features, verbose=0)
+reg.fit(data.iloc[:100].drop(columns=["medv"]), data.iloc[:100]["medv"])
+preds_raw = reg.predict(data.iloc[100:].drop(columns=["medv"]))
+
+reg = CatBoostRegressor(cat_features=cat_features, verbose=0)
+reg.fit(o.drop(columns=["medv"]), o["medv"])
+preds_generated1 = reg.predict(data.iloc[100:].drop(columns=["medv"]))
+
+reg = CatBoostRegressor(cat_features=cat_features, verbose=0)
+reg.fit(o1.drop(columns=["medv"]), o1["medv"])
+preds_generated2 = reg.predict(data.iloc[100:].drop(columns=["medv"]))
+
+reg = CatBoostRegressor(cat_features=cat_features, verbose=0)
+reg.fit(
+    pd.concat([o, data.iloc[:100]]).drop(columns=["medv"]),
+    pd.concat([o, data.iloc[:100]])["medv"]
+)
+preds_combo = reg.predict(data.iloc[100:].drop(columns=["medv"]))
+
+reg = CatBoostRegressor(cat_features=cat_features, verbose=0)
+reg.fit(
+    pd.concat([o1, data.iloc[:100]]).drop(columns=["medv"]),
+    pd.concat([o1, data.iloc[:100]])["medv"]
+)
+preds_combo1 = reg.predict(data.iloc[100:].drop(columns=["medv"]))
+
+res_gan = pd.DataFrame([
+    {"name": "raw", "mae": mae(data.iloc[100:]["medv"], preds_raw), "mape": mape(data.iloc[100:]["medv"], preds_raw), "r2": r2_score(data.iloc[100:]["medv"], preds_raw)},
+    {"name": "gen-all-noise", "mae": mae(data.iloc[100:]["medv"], preds_generated1), "mape": mape(data.iloc[100:]["medv"], preds_generated1), "r2": r2_score(data.iloc[100:]["medv"], preds_generated1)},
+    {"name": "gen-best-noise", "mae": mae(data.iloc[100:]["medv"], preds_generated2), "mape": mape(data.iloc[100:]["medv"], preds_generated2), "r2": r2_score(data.iloc[100:]["medv"], preds_generated2)},
+    {"name": "combo-all-noise", "mae": mae(data.iloc[100:]["medv"], preds_combo), "mape": mape(data.iloc[100:]["medv"], preds_combo), "r2": r2_score(data.iloc[100:]["medv"], preds_combo)},
+    {"name": "combo-best-noise", "mae": mae(data.iloc[100:]["medv"], preds_combo1), "mape": mape(data.iloc[100:]["medv"], preds_combo1), "r2": r2_score(data.iloc[100:]["medv"], preds_combo1)}
+])
+print(res_gan.sort_values(by="r2", ascending=False))
+
+# VAE
+
+vae_model = VaeGenerator(data, cat_features, 3).to("cuda:0")
+opt_creator = torch.optim.Adam(gan_model.creator.parameters(), lr=1e-4)
+opt_critic = torch.optim.Adam(gan_model.critic.parameters(), lr=1e-3)
+
+data[cat_features] = data[cat_features].astype(float).astype(int)
+
+E = tqdm(range(20), total=20)
 loss_critic = None
 loss_creator = None
 for epoch in E:
