@@ -5,7 +5,7 @@ from tqdm import tqdm
 import numpy as np
 
 
-class MyGenerator(torch.nn.Module):
+class GanGenerator(torch.nn.Module):
     def __init__(self, dataframe: pd.DataFrame, cat_features: List[str], desired_embedding_size: int):
         super().__init__()
         # Кодируем входное пространство
@@ -31,15 +31,21 @@ class MyGenerator(torch.nn.Module):
             
         self.embedding_layers = torch.nn.ParameterDict(self.embedding_layers)
         
-        self.encoder = torch.nn.Sequential(
-            torch.nn.Linear(self.embedded_size, self.embedded_size // 2),
+        self.creator = torch.nn.Sequential(
+            torch.nn.Linear(self.embedded_size, 1000),
             torch.nn.ReLU(),
-            torch.nn.Linear(self.embedded_size // 2, self.embedded_size + 1)
+            torch.nn.Linear(1000, self.embedded_size)
+        )
+        self.critic = torch.nn.Sequential(
+            torch.nn.Linear(self.embedded_size, 1000),
+            torch.nn.ReLU(),
+            torch.nn.Linear(1000, 1),
+            torch.nn.Sigmoid()
         )
         
         self.pdist = torch.nn.PairwiseDistance()
-        
-    def forward(self, table: pd.DataFrame):
+    
+    def encode(self, table: pd.DataFrame):
         encoded_input = torch.zeros((table.shape[0], self.embedded_size))
         for col in table.columns:
             scheme = self.embedding_scheme[col]
@@ -50,10 +56,15 @@ class MyGenerator(torch.nn.Module):
             if col in self.cat_features:
                 values = values[:, 0]
             encoded_input[:, scheme[0]:scheme[1]] = self.embedding_layers[col](values.to("cuda:0"))
-        full_out = self.encoder(encoded_input.to("cuda:0"))
-        out = full_out[:, :-1].cpu()
-        cls = full_out[:, -1].cpu()
-        return out, cls, encoded_input
+        return encoded_input
+    
+    def forward(self, table: pd.DataFrame):
+
+        return self.creator(torch.rand((table.shape[0], self.embedded_size), device="cuda:0"))
+        #full_out = self.encoder(encoded_input.to("cuda:0"))
+        #out = full_out[:, :-1].cpu()
+        #cls = full_out[:, -1].cpu()
+        #return out, cls, encoded_input
     
     @torch.no_grad()
     def decode_output(self, out):
