@@ -32,13 +32,13 @@ class VaeGenerator(torch.nn.Module):
         self.embedding_layers = torch.nn.ParameterDict(self.embedding_layers)
         
         self.encoder = torch.nn.Sequential(
-            torch.nn.Linear(self.embedded_size, 256),
+            torch.nn.Linear(self.embedded_size, 512),
             torch.nn.ReLU(),
-            torch.nn.Linear(256, self.embedded_size)
+            torch.nn.Linear(512, 512)
         )
-        self.mu = torch.nn.Linear(256, 256)
-        self.sigma = torch.nn.Linear(256, 256)
-        self.decoder = torch.nn.Sequential(torch.nn.Linear(256, 256), torch.nn.ReLU(), torch.nn.Linear(256, self.embedded_size))
+        self.mu = torch.nn.Linear(512, 512)
+        self.sigma = torch.nn.Linear(512, 512)
+        self.decoder = torch.nn.Sequential(torch.nn.Linear(512, 512), torch.nn.ReLU(), torch.nn.Linear(512, self.embedded_size))
         self.k = 0
         self.pdist = torch.nn.PairwiseDistance()
     
@@ -56,12 +56,12 @@ class VaeGenerator(torch.nn.Module):
         return encoded_input
     
     def forward(self, table: pd.DataFrame):
-        coded = self.encode(table)
+        coded = self.encode(table).to("cuda:0")
         projection = self.encoder(coded)
         mu_ = self.mu(projection)
         sigma_ = self.sigma(projection)
-        r = torch.rand((table.shape[0], 256), device="cuda:0")
-        self.k = (mu_**2 + sigma_**2).mean()
+        r = torch.rand((table.shape[0], 512), device="cuda:0")
+        self.kl = (mu_**2 + sigma_**2).mean()
         decoding = self.decoder(r * mu_ + sigma_)
         return decoding
     

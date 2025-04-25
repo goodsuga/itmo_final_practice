@@ -32,14 +32,14 @@ class GanGenerator(torch.nn.Module):
         self.embedding_layers = torch.nn.ParameterDict(self.embedding_layers)
         
         self.creator = torch.nn.Sequential(
-            torch.nn.Linear(self.embedded_size, 1000),
+            torch.nn.Linear(self.embedded_size, 256),
             torch.nn.ReLU(),
-            torch.nn.Linear(1000, self.embedded_size)
+            torch.nn.Linear(256, self.embedded_size)
         )
         self.critic = torch.nn.Sequential(
-            torch.nn.Linear(self.embedded_size, 1000),
+            torch.nn.Linear(self.embedded_size, 256),
             torch.nn.ReLU(),
-            torch.nn.Linear(1000, 1),
+            torch.nn.Linear(256, 1),
             torch.nn.Sigmoid()
         )
         
