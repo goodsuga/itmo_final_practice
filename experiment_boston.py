@@ -8,6 +8,16 @@ import numpy as np
 from catboost import CatBoostRegressor
 from sklearn.metrics import mean_absolute_error as mae, mean_absolute_percentage_error as mape, r2_score
 from tqdm import tqdm
+from pathlib import Path
+from uuid import uuid4
+
+outdir = Path("boston_results")
+out_my = outdir / "my"
+out_my.mkdir(exist_ok=True, parents=True)
+out_gan = outdir / "gan"
+out_gan.mkdir(exist_ok=True, parents=True)
+out_vae = outdir / "vae"
+out_vae.mkdir(exist_ok=True, parents=True)
 
 RNG = np.random.default_rng(42)
 
@@ -123,7 +133,7 @@ res = pd.DataFrame([
     {"name": "combo-all-real", "mae": mae(data.iloc[100:]["medv"], preds_combo2), "mape": mape(data.iloc[100:]["medv"], preds_combo2), "r2": r2_score(data.iloc[100:]["medv"], preds_combo2)},
     {"name": "combo-best-real", "mae": mae(data.iloc[100:]["medv"], preds_combo3), "mape": mape(data.iloc[100:]["medv"], preds_combo3), "r2": r2_score(data.iloc[100:]["medv"], preds_combo3)},
 ])
-print(res.sort_values(by="r2", ascending=False))
+res.sort_values(by="r2", ascending=False).to_csv(out_my / (str(uuid) + ".csv"), index=False)
 
 
 # GAN
@@ -201,7 +211,7 @@ res_gan = pd.DataFrame([
     {"name": "combo-all-noise", "mae": mae(data.iloc[100:]["medv"], preds_combo), "mape": mape(data.iloc[100:]["medv"], preds_combo), "r2": r2_score(data.iloc[100:]["medv"], preds_combo)},
     {"name": "combo-best-noise", "mae": mae(data.iloc[100:]["medv"], preds_combo1), "mape": mape(data.iloc[100:]["medv"], preds_combo1), "r2": r2_score(data.iloc[100:]["medv"], preds_combo1)}
 ])
-print(res_gan.sort_values(by="r2", ascending=False))
+res_gan.sort_values(by="r2", ascending=False).to_csv(out_gan / (str(uuid) + ".csv"), index=False)
 
 # VAE
 
@@ -248,5 +258,5 @@ res_vae = pd.DataFrame([
     {"name": "gen-all-noise", "mae": mae(data.iloc[100:]["medv"], preds_generated1), "mape": mape(data.iloc[100:]["medv"], preds_generated1), "r2": r2_score(data.iloc[100:]["medv"], preds_generated1)},
     {"name": "combo-all-noise", "mae": mae(data.iloc[100:]["medv"], preds_combo), "mape": mape(data.iloc[100:]["medv"], preds_combo), "r2": r2_score(data.iloc[100:]["medv"], preds_combo)},
 ])
-print(res_vae.sort_values(by="r2", ascending=False))
+res_vae.sort_values(by="r2", ascending=False).to_csv(out_vae / (str(uuid) + ".csv"), index=False)
 
