@@ -4,8 +4,18 @@ from typing import List
 from tqdm import tqdm
 import numpy as np
 
+class OneHotEncoder(torch.nn.Module):
+    def __init__(self, nunique):
+        super().__init__()
+        self.nunique = nunique
+    
+    def forward(self, x):
+        out_vec = torch.zeros((x.shape[0], self.nunique))
+        for i in range(self.nunique):
+            out_vec[:, i] = (x == i).float()
+        return out_vec
 
-class MyGenerator(torch.nn.Module):
+class MyGumbelGenerator(torch.nn.Module):
     def __init__(self, dataframe: pd.DataFrame, cat_features: List[str], desired_embedding_size: int):
         super().__init__()
         # Кодируем входное пространство
@@ -20,9 +30,9 @@ class MyGenerator(torch.nn.Module):
             col = dataframe[feature]
             if feature in cat_features:
                 self.stats[feature] = {"nunique": col.nunique()}
-                self.embedding_scheme[feature] = (self.embedded_size, self.embedded_size + desired_embedding_size)
-                self.embedded_size += desired_embedding_size
-                self.embedding_layers[feature] = torch.nn.Embedding(self.stats[feature]["nunique"], desired_embedding_size)
+                self.embedding_scheme[feature] = (self.embedded_size, self.embedded_size + col.nunique())
+                self.embedded_size += col.nunique()
+                self.embedding_layers[feature] = OneHotEncoder(self.stats[feature]["nunique"])
             else:
                 self.stats[feature] = {"min": col.min(), "max": col.max()}
                 self.embedding_scheme[feature] = (self.embedded_size, self.embedded_size + 1)
@@ -38,7 +48,7 @@ class MyGenerator(torch.nn.Module):
         )
         
         self.pdist = torch.nn.PairwiseDistance()
-        print(self.embedded_size)
+        print(f"{self.embedded_size=}")
         
     def forward(self, table: pd.DataFrame):
         encoded_input = torch.zeros((table.shape[0], self.embedded_size))
@@ -53,6 +63,11 @@ class MyGenerator(torch.nn.Module):
             encoded_input[:, scheme[0]:scheme[1]] = self.embedding_layers[col](values.to("cuda:0"))
         full_out = self.encoder(encoded_input.to("cuda:0"))
         out = full_out[:, :-1].cpu()
+        for col in self.embedding_scheme:
+            scheme = self.embedding_scheme[col]
+            col_out = out[:, scheme[0]:scheme[1]]
+            if col in self.cat_features:
+                out[:, scheme[0]:scheme[1]] = torch.nn.functional.gumbel_softmax(col_out, hard=True)
         cls = full_out[:, -1].cpu()
         return out, cls, encoded_input
     
@@ -63,12 +78,7 @@ class MyGenerator(torch.nn.Module):
             scheme = self.embedding_scheme[col]
             col_out = out[:, scheme[0]:scheme[1]]
             if col in self.cat_features:
-                embeddings = self.embedding_layers[col].weight.data
-                dist = np.array([
-                    int(torch.argmax(((embeddings - col_out[i])**2).mean(dim=-1)).item())
-                    for i in range(col_out.shape[0])
-                ])
-                cols[col] = dist
+                cols[col] = torch.argmax(torch.nn.functional.gumbel_softmax(col_out, hard=True), dim=-1).cpu().numpy().flatten()
             else:
                 cols[col] = (col_out * (self.stats[col]["max"] - self.stats[col]["min"]) + self.stats[col]["min"]).cpu().numpy().flatten()
         return pd.DataFrame(cols)

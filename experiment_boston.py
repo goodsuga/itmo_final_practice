@@ -145,8 +145,8 @@ def run_boston():
     # GAN
 
     gan_model = GanGenerator(data, cat_features, 3).to("cuda:0")
-    opt_creator = torch.optim.Adam(gan_model.creator.parameters(), lr=1e-4)
-    opt_critic = torch.optim.Adam(gan_model.critic.parameters(), lr=1e-3)
+    opt_creator = torch.optim.Adam(gan_model.creator.parameters(), lr=1e-3)
+    opt_critic = torch.optim.Adam(gan_model.critic.parameters(), lr=1e-4)
 
     data[cat_features] = data[cat_features].astype(float).astype(int)
 
